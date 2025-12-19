@@ -6,7 +6,7 @@ const Project = require("../models/project");
 const router = express.Router();
 
 // Apply auth middleware to all routes
-// router.use(auth);
+
 
 // Get all users (for adding to projects)
 router.get("/", async (req, res) => {
@@ -30,6 +30,7 @@ router.get("/", async (req, res) => {
   }
 });
 
+// Updated route in users.js
 // Get users in a specific project
 router.get("/project/:projectId", async (req, res) => {
   try {
@@ -46,33 +47,75 @@ router.get("/project/:projectId", async (req, res) => {
     }
 
     // Check if user has access to this project
-    const hasAccess =
-      project.createdBy.equals(req.userId) ||
-      project.members.some((m) => m.user._id.equals(req.userId));
+    const hasAccess = 
+      !req.userId || 
+      project.members.some((m) => m.user && m.user._id.equals(req.userId));
 
-    if (!hasAccess) {
+    if (req.userId && !hasAccess) {
       return res.status(403).json({
         error: "Access denied",
         message: "You do not have access to this project",
       });
     }
 
-    // Extract user data from members
-    const projectMembers = project.members.map((member) => ({
-      ...member.user.toObject(),
-      role: member.role,
-      joinedAt: member.joinedAt,
-    }));
+    // Extract user data from members with consistent structure
+    const projectMembers = project.members
+      .filter(member => member.user) 
+      .map((member) => ({
+        _id: member.user._id,
+        userId: member.user._id,  
+        name: member.user.name,
+        email: member.user.email,
+        avatarColor: member.user.avatarColor,
+        role: member.role,
+        joinedAt: member.joinedAt,
+      }));
 
-    res.json({
-      success: true,
-      members: projectMembers,
-    });
+    res.json(projectMembers); 
   } catch (error) {
     console.error("Get project users error:", error);
     res.status(500).json({
       error: "Server error",
       message: "Failed to fetch project users",
+    });
+  }
+});
+
+// Remove member from project
+router.delete("/project/:projectId/members/:userId", async (req, res) => {
+  try {
+    const { projectId, userId } = req.params;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        error: "Not found",
+        message: "Project not found",
+      });
+    }
+
+    // Check if user is a member to remove
+    const memberExists = project.members.some((m) => m.user.toString() === userId);
+    if (!memberExists) {
+      return res.status(404).json({
+        error: "Not found",
+        message: "User is not a member of this project",
+      });
+    }
+
+    // Remove member
+    project.members = project.members.filter((m) => m.user.toString() !== userId);
+    await project.save();
+
+    res.json({
+      success: true,
+      message: "Member removed successfully",
+    });
+  } catch (error) {
+    console.error("Remove member error:", error);
+    res.status(500).json({
+      error: "Server error",
+      message: "Failed to remove member",
     });
   }
 });

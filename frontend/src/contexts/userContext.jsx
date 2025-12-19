@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext } from "react";
+import React, { createContext, useContext, useState } from "react";
 
 const UserContext = createContext();
 
@@ -11,7 +11,7 @@ export const useUsers = () => {
 };
 
 export const UserProvider = ({ children }) => {
-  // Your mock users - these are static, no API calls
+  // Your 5 mock users - static, never changes
   const mockUsers = [
     {
       _id: "1",
@@ -50,62 +50,47 @@ export const UserProvider = ({ children }) => {
     },
   ];
 
-  const [users] = useState(mockUsers); // Static list, never changes
+  const [users] = useState(mockUsers);
 
-  // Function to add user to project (just updates project in database)
+  // Function to add mock user to project
   const addUserToProject = async (projectId, userId, role = "member") => {
     try {
-      console.log(`Adding mock user ${userId} to project ${projectId}`);
-
-      // Call backend to update project with this user
-      const response = await fetch(`/api/projects/${projectId}/members`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId,
-          role,
-        }),
-      });
+      const response = await fetch(
+        `http://localhost:5000/api/projects/${projectId}/members`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            userId,
+            role,
+          }),
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to add user to project");
+        throw new Error(data.message || "Failed to add user");
       }
 
-      return {
-        success: true,
-        data,
-      };
+      return { success: true, data };
     } catch (error) {
-      console.error("Error adding user to project:", error);
-      return {
-        success: false,
-        error: error.message || "Failed to add user to project",
-      };
+      console.error("Error:", error);
+      return { success: false, error: error.message };
     }
   };
 
-  // Helper function to get user by ID
+  // Helper functions
   const getUserById = (userId) => {
     return mockUsers.find((user) => user._id === userId);
   };
 
-  // Get users not in a project (for dropdowns)
-  const getAvailableUsersForProject = (currentProjectMembers = []) => {
-    const memberIds = currentProjectMembers.map(
-      (member) => member.userId || member.user
-    );
-    return mockUsers.filter((user) => !memberIds.includes(user._id));
-  };
-
   const value = {
-    users: mockUsers, // Always return mock users
+    users: mockUsers,
     getUserById,
     addUserToProject,
-    getAvailableUsersForProject,
   };
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

@@ -5,12 +5,17 @@ const Project = require("../models/project");
 
 const router = express.Router();
 
-// router.use(authenticate);
+
 
 // Get user's tasks
 router.get("/my-tasks", async (req, res) => {
   try {
-    const tasks = await Task.find({ assignedTo: req.userId })
+    let tasks;
+
+    // Build the query
+    const query = req.userId ? { assignedTo: req.userId } : {};
+
+    tasks = await Task.find(query)
       .populate("project", "name")
       .populate("assignedTo", "name email avatarColor")
       .populate("createdBy", "name email avatarColor")
@@ -66,11 +71,12 @@ router.post("/", async (req, res) => {
       return res.status(404).json({ error: "Project not found" });
     }
 
+    // Allow if no auth or if user is a member
     const hasAccess =
-      projectDoc.createdBy.toString() === req.userId ||
+      !req.userId ||
       projectDoc.members.some((m) => m.user.toString() === req.userId);
 
-    if (!hasAccess) {
+    if (req.userId && !hasAccess) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -81,7 +87,7 @@ router.post("/", async (req, res) => {
       assignedTo,
       priority,
       dueDate: dueDate ? new Date(dueDate) : null,
-      createdBy: req.userId,
+      createdBy: req.userId || assignedTo, // Fallback if no auth
     });
 
     await task.save();
@@ -98,12 +104,22 @@ router.post("/", async (req, res) => {
   }
 });
 
-// Update task status
+// Update task status 
 router.patch("/:id/status", async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
 
+    // Validate status 
+    const validStatuses = ["todo", "in_progress", "done", "blocked"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: "Invalid status",
+        message: `Status must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    // Find task to check access
     const task = await Task.findById(id);
     if (!task) {
       return res.status(404).json({ error: "Task not found" });
@@ -112,24 +128,43 @@ router.patch("/:id/status", async (req, res) => {
     // Check project access
     const project = await Project.findById(task.project);
     const hasAccess =
-      project?.createdBy.toString() === req.userId ||
-      project?.members.some((m) => m.user.toString() === req.userId) ||
+      project?.createdBy?.toString() === req.userId ||
+      project?.members?.some((m) => m.user?.toString() === req.userId) ||
       task.assignedTo?.toString() === req.userId;
 
-    if (!hasAccess) {
+    if (req.userId && !hasAccess) {
       return res.status(403).json({ error: "Access denied" });
     }
 
-    task.status = status;
-    await task.save();
+    // Update only the status field with validation
+    const updatedTask = await Task.findByIdAndUpdate(
+      id,
+      { status },
+      {
+        new: true,           
+        runValidators: true, 
+      }
+    )
+      .populate("assignedTo", "name email avatarColor")
+      .populate("createdBy", "name email avatarColor")
+      .populate("project", "name");
 
-    await task.populate("assignedTo", "name email avatarColor");
-    await task.populate("createdBy", "name email avatarColor");
-    await task.populate("project", "name");
+    if (!updatedTask) {
+      return res.status(404).json({ error: "Task not found" });
+    }
 
-    res.json(task);
+    res.json(updatedTask);
   } catch (error) {
     console.error("Error updating task status:", error);
+
+    // Better error handling for validation
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        error: "Validation error",
+        message: Object.values(error.errors)[0].message,
+      });
+    }
+
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -186,11 +221,19 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Task not found" });
     }
 
-    // Check project access
+    // Get project
     const project = await Project.findById(task.project);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    // Safe access check
     const hasAccess =
-      project?.createdBy.toString() === req.userId ||
-      project?.members.some((m) => m.user.toString() === req.userId);
+      !req.userId ||  
+      project.createdBy?.toString() === req.userId ||
+      (project.members || []).some(
+        (m) => m.user && m.user.toString() === req.userId
+      );
 
     if (!hasAccess) {
       return res.status(403).json({ error: "Access denied" });

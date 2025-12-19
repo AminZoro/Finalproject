@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/authContext.jsx";
-import api from "../services/api2.js";
+import api from "../services/api.js";
 import { useProjects } from "../contexts/projectContext.jsx";
 import { useUsers } from "../contexts/userContext.jsx";
 // create components for each function
 //one api to return the users,tasks and
 const Dashboard = () => {
   const { user, logout } = useAuth();
-  const { projects, createProject } = useProjects();
+  const { projects, setProjects, createProject } = useProjects();
   console.log(projects);
   const [tasks, setTasks] = useState([]);
   const [users, setUsers] = useState([
@@ -75,7 +75,7 @@ const Dashboard = () => {
     role: "member",
     avatarColor: "bg-blue-500",
     assignToProject: selectedProject?._id || "", // Auto-fill if from project modal
-    createTask: false, // Option to create a task for them
+    createTask: false,
     taskTitle: "",
     taskDescription: "",
   });
@@ -86,6 +86,7 @@ const Dashboard = () => {
   }, []);
 
   const loadData = async () => {
+    setLoading(true);
     try {
       const [projectsRes, tasksRes, usersRes] = await Promise.all([
         api.get("/projects"),
@@ -93,11 +94,26 @@ const Dashboard = () => {
         api.get("/users"),
       ]);
 
-      // setProjects(projectsRes.data);
-      // setTasks(tasksRes.data);
-      // setUsers(usersRes.data);
+      // Safely extract the tasks array
+      const tasksData = Array.isArray(tasksRes.data)
+        ? tasksRes.data
+        : tasksRes.data.tasks ||
+          tasksRes.data.myTasks ||
+          tasksRes.data.data ||
+          [];
+
+      setTasks(tasksData);
+      console.log("Tasks state set to:", tasksData);
+      // Handle users response
+      const usersData = usersRes.data.users || usersRes.data;
+      setUsers(Array.isArray(usersData) ? usersData : []);
+
+      console.log("Loaded tasks:", tasksData);
+      console.log("Loaded users:", usersData);
     } catch (error) {
       console.error("Error loading data:", error);
+      setTasks([]);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -106,9 +122,22 @@ const Dashboard = () => {
   const loadProjectMembers = async (projectId) => {
     try {
       const response = await api.get(`/users/project/${projectId}`);
-      setProjectMembers(response.data);
+      // The response is an array of users with role and joinedAt
+      const membersData = Array.isArray(response.data)
+        ? response.data
+        : response.data.members || [];
+
+      // Transform to consistent format
+      const formattedMembers = membersData.map((member) => ({
+        userId: member._id, // Add userId for consistency
+        ...member,
+      }));
+
+      setProjectMembers(formattedMembers);
+      console.log("Loaded project members:", formattedMembers);
     } catch (error) {
       console.error("Error loading project members:", error);
+      setProjectMembers([]);
     }
   };
 
@@ -168,7 +197,7 @@ const Dashboard = () => {
             priority: "medium",
             dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
               .toISOString()
-              .split("T")[0], // 7 days from now
+              .split("T")[0],
           });
           taskCreated = true;
         } catch (taskError) {
@@ -211,10 +240,10 @@ const Dashboard = () => {
     if (!newProjectName.trim()) return;
 
     try {
+      // Let context handle the update
       await createProject(newProjectName);
 
       setNewProjectName("");
-      alert(`Project "${newProjectName}" created successfully!`);
     } catch (error) {
       console.error("Error creating project:", error);
       alert("Failed to create project");
@@ -302,46 +331,112 @@ const Dashboard = () => {
     }
   };
 
-  // User/Team Functions
   const handleAddMemberToProject = async () => {
-    if (!selectedProject || !newMemberId) return;
+    if (!selectedProject || !newMemberId) {
+      alert("Please select a user to add");
+      return;
+    }
+
+    if (newMemberId.length !== 24) {
+      alert("Invalid user selected. Please refresh and try again.");
+      return;
+    }
 
     try {
-      await api.post(`/projects/${selectedProject._id}/members`, {
+      const res = await api.post(`/projects/${selectedProject._id}/members`, {
         userId: newMemberId,
         role: "member",
       });
 
-      // Reload project members
+      const newMember = res.data.member;
+
+      // UPDATE DASHBOARD PROJECT LIST
+      setProjects((prevProjects) =>
+        prevProjects.map((project) =>
+          project._id === selectedProject._id
+            ? {
+                ...project,
+                members: [
+                  ...(project.members || []),
+                  {
+                    user: {
+                      _id: newMember.userId,
+                      name: newMember.name,
+                      email: newMember.email,
+                      avatarColor: newMember.avatarColor,
+                    },
+                    role: newMember.role,
+                    joinedAt: newMember.joinedAt,
+                  },
+                ],
+              }
+            : project
+        )
+      );
+
+      // UPDATE SELECTED PROJECT
+      setSelectedProject((prev) => ({
+        ...prev,
+        members: [
+          ...(prev.members || []),
+          {
+            user: {
+              _id: newMember.userId,
+              name: newMember.name,
+              email: newMember.email,
+              avatarColor: newMember.avatarColor,
+            },
+            role: newMember.role,
+            joinedAt: newMember.joinedAt,
+          },
+        ],
+      }));
+
       await loadProjectMembers(selectedProject._id);
       setNewMemberId("");
       alert("Member added successfully!");
     } catch (error) {
       console.error("Error adding member:", error);
-      alert("Failed to add member");
+      const errorMsg = error.response?.data?.message || "Failed to add member";
+      alert(errorMsg);
     }
   };
 
   const handleRemoveMemberFromProject = async (userId) => {
     if (!selectedProject || !userId) return;
 
-    if (window.confirm("Are you sure you want to remove this member?")) {
-      try {
-        // Update locally for mock data
-        const project = projects.find((p) => p._id === selectedProject._id);
-        if (project) {
-          // Remove member from project
-          project.members = project.members.filter((m) => m.userId !== userId);
-          // Update state
-          setProjects([...projects]);
-          // Reload members
-          await loadProjectMembers(selectedProject._id);
-          alert("Member removed successfully!");
-        }
-      } catch (error) {
-        console.error("Error removing member:", error);
-        alert("Failed to remove member");
-      }
+    if (!window.confirm("Are you sure you want to remove this member?")) return;
+
+    try {
+      const res = await fetch(
+        `http://localhost:8080/api/projects/${selectedProject._id}/members/${userId}`,
+        { method: "DELETE" }
+      );
+
+      if (!res.ok) throw new Error("Failed to remove member");
+
+      // UPDATE DASHBOARD PROJECT LIST
+      setProjects((prevProjects) =>
+        prevProjects.map((project) =>
+          project._id === selectedProject._id
+            ? {
+                ...project,
+                members: project.members.filter((m) => m.user._id !== userId),
+              }
+            : project
+        )
+      );
+
+      // Update selected project as well
+      setSelectedProject((prev) => ({
+        ...prev,
+        members: prev.members.filter((m) => m.user._id !== userId),
+      }));
+
+      await loadProjectMembers(selectedProject._id);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to remove member");
     }
   };
 
@@ -747,6 +842,14 @@ const Dashboard = () => {
                 const projectTaskCount = tasks.filter(
                   (task) => task.project === project._id
                 ).length;
+
+                // Use the correct property to get member IDs
+                const projectMemberIds =
+                  project.members?.map(
+                    (m) => m.user?._id || m.user || m.userId
+                  ) || [];
+                const projectMemberCount = projectMemberIds.length;
+
                 const projectTodoCount = tasks.filter(
                   (task) =>
                     task.project === project._id && task.status === "todo"
@@ -757,9 +860,6 @@ const Dashboard = () => {
                 ).length;
 
                 // Get project members
-                const projectMemberIds =
-                  project.members?.map((m) => m.userId) || [];
-                const projectMemberCount = projectMemberIds.length;
 
                 return (
                   <div
@@ -859,6 +959,11 @@ const Dashboard = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {users.map((user) => {
+                // Check membership correctly
+                const isAlreadyMember = projectMembers.some(
+                  (member) => (member.userId || member._id) === user._id
+                );
+
                 // Count tasks assigned to this user
                 const userTaskCount = tasks.filter(
                   (task) => task.assignedTo === user._id
@@ -880,7 +985,9 @@ const Dashboard = () => {
                 return (
                   <div
                     key={user._id}
-                    className="border border-gray-200 rounded-lg p-4"
+                    className={`flex items-center text-sm p-2 rounded ${
+                      isAlreadyMember ? "bg-green-50" : ""
+                    }`}
                   >
                     <div className="flex items-center">
                       <div
@@ -899,7 +1006,7 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+                    {/* <div className="mt-4 grid grid-cols-2 gap-2 text-center">
                       <div className="bg-blue-50 p-2 rounded">
                         <p className="text-sm text-gray-600">Projects</p>
                         <p className="font-semibold text-blue-700">
@@ -912,9 +1019,9 @@ const Dashboard = () => {
                           {userTaskCount}
                         </p>
                       </div>
-                    </div>
+                    </div> */}
 
-                    <div className="mt-4">
+                    {/* <div className="mt-4">
                       <p className="text-xs text-gray-500 mb-1">Task Status:</p>
                       <div className="flex items-center text-xs">
                         <div className="flex-1">
@@ -935,9 +1042,9 @@ const Dashboard = () => {
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </div> */}
 
-                    <div className="mt-4">
+                    {/* <div className="mt-4">
                       <p className="text-xs text-gray-500">Current Tasks:</p>
                       <ul className="text-xs text-gray-600 mt-1 space-y-1">
                         {tasks
@@ -969,7 +1076,7 @@ const Dashboard = () => {
                           <li className="text-gray-400">No active tasks</li>
                         )}
                       </ul>
-                    </div>
+                    </div> */}
                   </div>
                 );
               })}
@@ -1059,34 +1166,34 @@ const Dashboard = () => {
                 ) : (
                   <div className="space-y-3">
                     {projectMembers.map((member) => {
-                      const user = getAssignedUser(member.userId);
-                      if (!user) return null;
+                      // member already has all user properties at the top level
+                      const userId = member.userId || member._id;
 
                       return (
                         <div
-                          key={member.userId}
+                          key={userId}
                           className="flex items-center justify-between bg-gray-50 p-3 rounded-lg"
                         >
                           <div className="flex items-center">
                             <div
                               className={`w-8 h-8 rounded-full flex items-center justify-center text-white ${
-                                user.avatarColor || "bg-blue-500"
+                                member.avatarColor || "bg-blue-500"
                               }`}
                             >
-                              {user.name.charAt(0)}
+                              {member.name.charAt(0)}
                             </div>
                             <div className="ml-3">
                               <p className="font-medium text-gray-900">
-                                {user.name}
+                                {member.name}
                               </p>
                               <p className="text-sm text-gray-500">
-                                {member.role} • {user.email}
+                                {member.role} • {member.email}
                               </p>
                             </div>
                           </div>
                           <button
                             onClick={() =>
-                              handleRemoveMemberFromProject(member.userId)
+                              handleRemoveMemberFromProject(userId)
                             }
                             className="text-red-500 hover:text-red-700 text-sm"
                           >
@@ -1419,12 +1526,12 @@ const Dashboard = () => {
                 >
                   <option value="">Choose a user...</option>
                   {users
-                    .filter(
-                      (user) =>
-                        !projectMembers.some(
-                          (member) => member.userId === user._id
-                        )
-                    )
+                    .filter((user) => {
+                      // Check against the correct property
+                      return !projectMembers.some(
+                        (member) => (member.userId || member._id) === user._id
+                      );
+                    })
                     .map((user) => (
                       <option key={user._id} value={user._id}>
                         {user.name} ({user.role}) • {user.email}

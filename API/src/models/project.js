@@ -16,11 +16,7 @@ const ProjectSchema = new mongoose.Schema(
       enum: ["planning", "active", "completed", "on_hold"],
       default: "active",
     },
-    // // createdBy: {
-    // //   type: mongoose.Schema.Types.ObjectId,
-    // //   ref: "User",
-    // //   required: true,
-    // },
+    
     members: [
       {
         user: {
@@ -44,17 +40,6 @@ const ProjectSchema = new mongoose.Schema(
   }
 );
 
-// // Add creator as admin member automatically
-// ProjectSchema.pre("save", function () {
-//   if (this.isNew) {
-//     this.members.push({
-//       user: this.createdBy,
-//       role: "admin",
-//       joinedAt: Date.now(),
-//     });
-//   }
-  
-// });
 
 // Index for faster queries
 ProjectSchema.index({ createdBy: 1, status: 1 });

@@ -12,7 +12,7 @@ export const useProjects = () => {
 };
 
 export const ProjectProvider = ({ children }) => {
-  const [projects, setProjects] = useState(null);
+  const [projects, setProjects] = useState([]);
 
   const [loading, setLoading] = useState(true);
 
@@ -22,26 +22,48 @@ export const ProjectProvider = ({ children }) => {
 
   const loadData = async () => {
     try {
-      const [projectsRes] = await Promise.all([api.get("/projects")]);
-      console.log(projectsRes.data);
-      setProjects(projectsRes.data.projects);
+      const projectsRes = await api.get("/projects");
+      
+      setProjects(projectsRes.data.projects || projectsRes.data || []);
     } catch (error) {
-      console.error("Error loading data:", error);
+      console.error("Error loading projects:", error);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
   };
-  const createProject = async (newProjectName) => {
-    const response = await api.post("/projects", {
-      name: newProjectName,
-      description: `Project: ${newProjectName}`,
-    });
+  const createProject = async (newProjectName, description = "") => {
+    try {
+      const response = await api.post("/projects", {
+        name: newProjectName,
+        description: description || `Project: ${newProjectName}`,
+      });
 
-    setProjects([response.data, ...projects]);
+      // Correctly extract the project object from response
+      const newProject = response.data.project; 
+
+      // Update state 
+      setProjects((prevProjects) => {
+        if (!prevProjects) return [newProject];
+        return [newProject, ...prevProjects];
+      });
+
+      return newProject;
+    } catch (error) {
+      console.error("Failed to create project:", error);
+      throw error;
+    }
   };
   const value = { projects, createProject };
   return (
-    <ProjectContext.Provider value={value}>
+    <ProjectContext.Provider
+      value={{
+        projects,
+        setProjects, 
+        createProject,
+        
+      }}
+    >
       {children}
       {/* Create Task Modal */}
     </ProjectContext.Provider>

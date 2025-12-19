@@ -18,7 +18,7 @@ export const AuthProvider = ({ children }) => {
   const [dummyModal, setDummyModal] = useState(false);
 
   const toggleDummyModal = ()=>{setDummyModal(!dummyModal)};
-  // Mock initialization - for frontend testing only
+  
   useEffect(() => {
     // Simulate checking for stored auth
     setTimeout(() => {
@@ -29,21 +29,20 @@ export const AuthProvider = ({ children }) => {
         role: "admin",
       };
 
-      // For testing, you can set a mock user automatically
-      // Or leave it null to test login flow
-      setUser(null); // Change to mockUser to auto-login
+      
+      setUser(null); 
       setLoading(false);
     }, 1000);
   }, []);
 
-  // Mock login - no API call needed
+  
   const login = async (email, password) => {
-    console.log("Mock login called with:", email);
+    console.log("login called with:", email);
 
     // Simulate API delay
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Mock response - you can change these values
+    
     const mockUser = {
       id: "1",
       email: email,
@@ -62,9 +61,9 @@ export const AuthProvider = ({ children }) => {
     return { success: true };
   };
 
-  // Mock registration
+  //  registration
   const register = async (name, email, password) => {
-    console.log("Mock register called:", name, email);
+    console.log("register called:", name, email);
 
     await new Promise((resolve) => setTimeout(resolve, 1000));
 

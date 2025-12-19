@@ -74,7 +74,7 @@ app.get("/api/test", (req, res) => {
   });
 });
 
-// Simple auth endpoints (temporary - add your real routes later)
+// Simple auth endpoints
 app.post("/api/auth/register", (req, res) => {
   const { name, email, password } = req.body;
   res.status(201).json({
