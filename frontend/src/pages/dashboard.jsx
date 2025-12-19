@@ -1,24 +1,60 @@
-
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../contexts/authContext.jsx";
-import api from "../services/api.js";
-
+import api from "../services/api2.js";
+import { useProjects } from "../contexts/projectContext.jsx";
+import { useUsers } from "../contexts/userContext.jsx";
 // create components for each function
 //one api to return the users,tasks and
 const Dashboard = () => {
-  const { user, logout, toggleDummyModal } = useAuth();
-  const [projects, setProjects] = useState([]);
-
+  const { user, logout } = useAuth();
+  const { projects, createProject } = useProjects();
+  console.log(projects);
   const [tasks, setTasks] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState([
+    {
+      _id: "1",
+      name: "John Doe",
+      email: "john@teamflow.com",
+      role: "admin",
+      avatarColor: "bg-blue-500",
+    },
+    {
+      _id: "2",
+      name: "Selena Kyle",
+      email: "Selena@teamflow.com",
+      role: "project_manager",
+      avatarColor: "bg-green-500",
+    },
+    {
+      _id: "3",
+      name: "Alex Mason",
+      email: "alex@teamflow.com",
+      role: "member",
+      avatarColor: "bg-purple-500",
+    },
+    {
+      _id: "4",
+      name: "Maria Garcia",
+      email: "maria@teamflow.com",
+      role: "member",
+      avatarColor: "bg-pink-500",
+    },
+    {
+      _id: "5",
+      name: "David Wilson",
+      email: "david@teamflow.com",
+      role: "member",
+      avatarColor: "bg-yellow-500",
+    },
+  ]);
+  const [loading, setLoading] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
 
   // Modals
   const [selectedProject, setSelectedProject] = useState(null);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
-  const [showUserManagement, setShowUserManagement] = useState(false);//ShowuserModal
+  const [showUserManagement, setShowUserManagement] = useState(false); //ShowuserModal
 
   // Forms
   const [newTask, setNewTask] = useState({
@@ -31,6 +67,18 @@ const Dashboard = () => {
   });
   const [newMemberId, setNewMemberId] = useState("");
   const [projectMembers, setProjectMembers] = useState([]);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [newUser, setNewUser] = useState({
+    name: "",
+    email: "",
+    password: "password123", // Default password
+    role: "member",
+    avatarColor: "bg-blue-500",
+    assignToProject: selectedProject?._id || "", // Auto-fill if from project modal
+    createTask: false, // Option to create a task for them
+    taskTitle: "",
+    taskDescription: "",
+  });
 
   // Load all data on mount
   useEffect(() => {
@@ -42,12 +90,12 @@ const Dashboard = () => {
       const [projectsRes, tasksRes, usersRes] = await Promise.all([
         api.get("/projects"),
         api.get("/tasks/my-tasks"),
-        api.get("/users/all"),
+        api.get("/users"),
       ]);
 
-      setProjects(projectsRes.data);
-      setTasks(tasksRes.data);
-      setUsers(usersRes.data);
+      // setProjects(projectsRes.data);
+      // setTasks(tasksRes.data);
+      // setUsers(usersRes.data);
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
@@ -65,17 +113,106 @@ const Dashboard = () => {
   };
 
   // Project Functions
+  // Add User Function (Create + Assign)
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+
+    if (!newUser.name.trim() || !newUser.email.trim()) {
+      alert("Name and email are required!");
+      return;
+    }
+
+    try {
+      // 1. Create the user
+      const userResponse = await api.post("/auth/register", {
+        name: newUser.name,
+        email: newUser.email,
+        password: newUser.password,
+        role: newUser.role,
+        avatarColor: newUser.avatarColor,
+      });
+
+      const newUserId = userResponse.data.user._id;
+
+      // 2. Refresh users list
+      const usersRes = await api.get("/users");
+      setUsers(usersRes.data.users || usersRes.data);
+
+      // 3. If project is selected, assign user to it
+      let assignedToProject = false;
+      if (newUser.assignToProject) {
+        try {
+          await api.post(`/projects/${newUser.assignToProject}/members`, {
+            userId: newUserId,
+            role: newUser.role,
+          });
+          assignedToProject = true;
+        } catch (projectError) {
+          console.warn("Could not assign to project:", projectError);
+        }
+      }
+
+      // 4. If task creation is enabled, create task
+      let taskCreated = false;
+      if (
+        newUser.createTask &&
+        newUser.taskTitle.trim() &&
+        newUser.assignToProject
+      ) {
+        try {
+          await api.post("/tasks", {
+            title: newUser.taskTitle,
+            description: newUser.taskDescription || `Task for ${newUser.name}`,
+            project: newUser.assignToProject,
+            assignedTo: newUserId,
+            priority: "medium",
+            dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split("T")[0], // 7 days from now
+          });
+          taskCreated = true;
+        } catch (taskError) {
+          console.warn("Could not create task:", taskError);
+        }
+      }
+
+      // 5. Reset form and show success message
+      setNewUser({
+        name: "",
+        email: "",
+        password: "password123",
+        role: "member",
+        avatarColor: "bg-blue-500",
+        assignToProject: "",
+        createTask: false,
+        taskTitle: "",
+        taskDescription: "",
+      });
+      setShowCreateUserModal(false);
+
+      // Show success message with details
+      let message = `User "${newUser.name}" created successfully!`;
+      if (assignedToProject) {
+        const project = projects.find((p) => p._id === newUser.assignToProject);
+        message += `\n✓ Assigned to project: ${project?.name || "Project"}`;
+      }
+      if (taskCreated) {
+        message += `\n✓ Task "${newUser.taskTitle}" created and assigned`;
+      }
+
+      alert(message);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      alert(error.response?.data?.message || "Failed to create user");
+    }
+  };
   const handleCreateProject = async (e) => {
     e.preventDefault();
     if (!newProjectName.trim()) return;
 
     try {
-      const response = await api.post("/projects", {
-        name: newProjectName,
-        description: `Project: ${newProjectName}`,
-      });
+      await createProject(newProjectName);
 
-      setProjects([response.data, ...projects]);
       setNewProjectName("");
       alert(`Project "${newProjectName}" created successfully!`);
     } catch (error) {
@@ -262,11 +399,7 @@ const Dashboard = () => {
           </div>
         </div>
       </header>
-    <button onClick={()=>{toggleDummyModal()
-}} > 
-        
-        toggleDummyModal
-    </button>
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
@@ -1230,6 +1363,23 @@ const Dashboard = () => {
                     Create Task
                   </button>
                 </div>
+
+                <div className="flex justify-end space-x-4 mb-8">
+                  <button
+                    onClick={() => setShowTaskModal(true)}
+                    className="flex items-center bg-green-600 hover:bg-green-700 text-white font-medium px-5 py-2.5 rounded-lg transition"
+                  >
+                    <span className="mr-2">+</span>
+                    Create New Task
+                  </button>
+                  <button
+                    onClick={() => setShowCreateUserModal(true)}
+                    className="flex items-center bg-purple-600 hover:bg-purple-700 text-white font-medium px-5 py-2.5 rounded-lg transition"
+                  >
+                    <span className="mr-2">👤</span>
+                    Add Team Member
+                  </button>
+                </div>
               </form>
             </div>
           </div>
@@ -1340,6 +1490,324 @@ const Dashboard = () => {
                   Add Member
                 </button>
               </div>
+              {/* Create User Modal - ADD THIS NEW MODAL */}
+              {showCreateUserModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <div className="p-6">
+                      <div className="flex justify-between items-start mb-6">
+                        <div>
+                          <h2 className="text-2xl font-bold text-gray-900">
+                            Add Team Member
+                          </h2>
+                          <p className="text-gray-600 mt-1">
+                            Create new user{" "}
+                            {selectedProject
+                              ? `for "${selectedProject.name}"`
+                              : ""}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowCreateUserModal(false);
+                            setNewUser({
+                              name: "",
+                              email: "",
+                              password: "password123",
+                              role: "member",
+                              avatarColor: "bg-blue-500",
+                              assignToProject: "",
+                              createTask: false,
+                              taskTitle: "",
+                              taskDescription: "",
+                            });
+                          }}
+                          className="text-gray-400 hover:text-gray-600 text-2xl"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleCreateUser}>
+                        <div className="space-y-6">
+                          {/* Basic User Info */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Full Name *
+                              </label>
+                              <input
+                                type="text"
+                                value={newUser.name}
+                                onChange={(e) =>
+                                  setNewUser({
+                                    ...newUser,
+                                    name: e.target.value,
+                                  })
+                                }
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                placeholder="John Doe"
+                                required
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Email *
+                              </label>
+                              <input
+                                type="email"
+                                value={newUser.email}
+                                onChange={(e) =>
+                                  setNewUser({
+                                    ...newUser,
+                                    email: e.target.value,
+                                  })
+                                }
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                placeholder="john@teamflow.com"
+                                required
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Password
+                              </label>
+                              <input
+                                type="text"
+                                value={newUser.password}
+                                onChange={(e) =>
+                                  setNewUser({
+                                    ...newUser,
+                                    password: e.target.value,
+                                  })
+                                }
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                placeholder="Set a password"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                Default: password123
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Role
+                              </label>
+                              <select
+                                value={newUser.role}
+                                onChange={(e) =>
+                                  setNewUser({
+                                    ...newUser,
+                                    role: e.target.value,
+                                  })
+                                }
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="member">Team Member</option>
+                                <option value="project_manager">
+                                  Project Manager
+                                </option>
+                                <option value="admin">Administrator</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Avatar Color Selection */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Avatar Color
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              {[
+                                "bg-blue-500",
+                                "bg-red-500",
+                                "bg-green-500",
+                                "bg-yellow-500",
+                                "bg-purple-500",
+                                "bg-pink-500",
+                                "bg-indigo-500",
+                              ].map((color) => (
+                                <button
+                                  type="button"
+                                  key={color}
+                                  onClick={() =>
+                                    setNewUser({
+                                      ...newUser,
+                                      avatarColor: color,
+                                    })
+                                  }
+                                  className={`w-10 h-10 rounded-full ${color} border-2 ${
+                                    newUser.avatarColor === color
+                                      ? "border-black"
+                                      : "border-transparent"
+                                  } hover:opacity-90`}
+                                  title={color
+                                    .replace("bg-", "")
+                                    .replace("-500", "")}
+                                />
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Project Assignment */}
+                          <div className="border-t pt-4">
+                            <div className="flex items-center mb-4">
+                              <input
+                                type="checkbox"
+                                id="assignToProject"
+                                checked={!!newUser.assignToProject}
+                                onChange={(e) =>
+                                  setNewUser({
+                                    ...newUser,
+                                    assignToProject: e.target.checked
+                                      ? selectedProject?._id ||
+                                        projects[0]?._id ||
+                                        ""
+                                      : "",
+                                  })
+                                }
+                                className="h-4 w-4 text-blue-600 rounded"
+                              />
+                              <label
+                                htmlFor="assignToProject"
+                                className="ml-2 font-medium text-gray-900"
+                              >
+                                Assign to a project
+                              </label>
+                            </div>
+
+                            {newUser.assignToProject && (
+                              <div className="ml-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Select Project
+                                </label>
+                                <select
+                                  value={newUser.assignToProject}
+                                  onChange={(e) =>
+                                    setNewUser({
+                                      ...newUser,
+                                      assignToProject: e.target.value,
+                                    })
+                                  }
+                                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                >
+                                  <option value="">Choose a project...</option>
+                                  {projects.map((project) => (
+                                    <option
+                                      key={project._id}
+                                      value={project._id}
+                                    >
+                                      {project.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Task Creation (only if project is selected) */}
+                          {newUser.assignToProject && (
+                            <div className="border-t pt-4">
+                              <div className="flex items-center mb-4">
+                                <input
+                                  type="checkbox"
+                                  id="createTask"
+                                  checked={newUser.createTask}
+                                  onChange={(e) =>
+                                    setNewUser({
+                                      ...newUser,
+                                      createTask: e.target.checked,
+                                    })
+                                  }
+                                  className="h-4 w-4 text-blue-600 rounded"
+                                />
+                                <label
+                                  htmlFor="createTask"
+                                  className="ml-2 font-medium text-gray-900"
+                                >
+                                  Create an initial task for this member
+                                </label>
+                              </div>
+
+                              {newUser.createTask && (
+                                <div className="ml-6 space-y-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Task Title *
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={newUser.taskTitle}
+                                      onChange={(e) =>
+                                        setNewUser({
+                                          ...newUser,
+                                          taskTitle: e.target.value,
+                                        })
+                                      }
+                                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                      placeholder="e.g., Complete onboarding"
+                                      required={newUser.createTask}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                      Task Description
+                                    </label>
+                                    <textarea
+                                      value={newUser.taskDescription}
+                                      onChange={(e) =>
+                                        setNewUser({
+                                          ...newUser,
+                                          taskDescription: e.target.value,
+                                        })
+                                      }
+                                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                                      rows={3}
+                                      placeholder="Describe what needs to be done..."
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex justify-end space-x-3 mt-8 pt-6 border-t border-gray-200">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowCreateUserModal(false);
+                              setNewUser({
+                                name: "",
+                                email: "",
+                                password: "password123",
+                                role: "member",
+                                avatarColor: "bg-blue-500",
+                                assignToProject: "",
+                                createTask: false,
+                                taskTitle: "",
+                                taskDescription: "",
+                              });
+                            }}
+                            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                          >
+                            Create User & Assign
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
