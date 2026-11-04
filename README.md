@@ -22,4 +22,4 @@ Frontend (browser)  -->  Express.js API  -->  MongoDB
 Getting Started
 Prerequisites
 Node.js installed
-A MongoDB database (local or MongoDB Atlas)
+A MongoDB database 
