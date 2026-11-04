@@ -4,13 +4,11 @@ A collaborative task-tracking web app where teams create, prioritise and track t
 
 Built as a team project during the UTS/Institute of Data Certified Software Engineering Professional course.
 
-Live demo: [add link if deployed, otherwise delete this line]
 
 Features
 Create teams and add tasks to them
 Set a priority and a due date for each task
 Track the progress of individual tasks
-[Add any other feature you built, e.g. edit/delete tasks, filtering, user accounts]
 Tech Stack
 Layer	Technology
 Frontend	HTML, CSS, JavaScript, Bootstrap
